@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask My Documents</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --accent:#0f6cbd; --border:#e2e2dc; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161616; --card:#1f1f1f; --text:#eee; --muted:#a3a3a3; --accent:#4ea1ff; --border:#333; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+  h1 { margin: 0 0 4px; font-size: 1.8rem; }
+  p.lead { margin: 0 0 24px; color: var(--muted); }
+  section { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; }
+  h2 { margin:0 0 12px; font-size:1.05rem; }
+  input[type=text] { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font:inherit; background:var(--bg); color:var(--text); }
+  button { margin-top:10px; padding:10px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .status { margin-top:10px; color:var(--muted); min-height:1.5em; }
+  .answer { white-space: pre-wrap; margin-top:14px; }
+  details { margin-top:12px; color:var(--muted); font-size:.9rem; }
+  details div { border-top:1px solid var(--border); padding:8px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ask My Documents</h1>
+  <p class="lead">Upload a PDF, TXT or MD file. Then ask questions about it.</p>
+
+  <section>
+    <h2>1. Upload a document</h2>
+    <form id="upload-form">
+      <input type="file" id="file" accept=".pdf,.txt,.md" required>
+      <br><button type="submit">Upload</button>
+    </form>
+    <div class="status" id="upload-status"></div>
+  </section>
+
+  <section>
+    <h2>2. Ask a question</h2>
+    <form id="ask-form">
+      <input type="text" id="question" placeholder="What is this document about?" required minlength="3">
+      <button type="submit">Ask</button>
+    </form>
+    <div class="status" id="ask-status"></div>
+    <div class="answer" id="answer"></div>
+    <details id="sources-box" hidden><summary>Sources</summary><div id="sources"></div></details>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function readError(res) {
+  try { return (await res.json()).detail || res.statusText; } catch { return res.statusText; }
+}
+
+$("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.submitter; btn.disabled = true;
+  $("upload-status").textContent = "Uploading and indexing...";
+  const body = new FormData(); body.append("file", $("file").files[0]);
+  try {
+    const res = await fetch("/upload", { method: "POST", body });
+    if (!res.ok) throw new Error(await readError(res));
+    const data = await res.json();
+    $("upload-status").textContent = `Done: ${data.file} (${data.chunks} chunks).`;
+  } catch (err) { $("upload-status").textContent = "Error: " + err.message; }
+  btn.disabled = false;
+});
+
+$("ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.submitter; btn.disabled = true;
+  $("ask-status").textContent = "Thinking...";
+  $("answer").textContent = ""; $("sources").replaceChildren(); $("sources-box").hidden = true;
+  try {
+    const res = await fetch("/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: $("question").value }),
+    });
+    if (!res.ok) throw new Error(await readError(res));
+    const data = await res.json();
+    $("ask-status").textContent = "";
+    $("answer").textContent = data.answer;  // textContent: no HTML injection
+    data.sources.forEach((s, i) => {
+      const div = document.createElement("div");
+      div.textContent = `[${i + 1}] ${s.source} (part ${s.chunk_no + 1}): ${s.content.slice(0, 300)}...`;
+      $("sources").appendChild(div);
+    });
+    $("sources-box").hidden = data.sources.length === 0;
+  } catch (err) { $("ask-status").textContent = "Error: " + err.message; }
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>
